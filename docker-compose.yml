@@ -1,0 +1,123 @@
+version: '3.2'
+
+networks:
+  default:
+    external: true
+    name: dev_network
+
+services:
+
+# The Application
+
+  app:
+    build:
+      context: ${PHP_FPM_CONTEXT}
+      dockerfile: ./Dockerfile
+    container_name: ${PHP_FPM_NAME}
+    volumes:
+      - ${APP_DATA_PATH}:/var/www/
+    depends_on:
+      - workspace
+
+  # The Web Server
+  nginx:
+    build: ${NGINX_CONTEXT}
+    container_name: ${NGINX_NAME}
+    restart: unless-stopped
+    tty: true
+    ports:
+      - ${NGINX_PORTS}:80
+      - 443:443
+    volumes:
+      - ${APP_DATA_PATH}:/var/www
+      - ${NGINX_SITES}:/etc/nginx/conf.d
+  # The Database
+
+  mysql:
+    build:
+      context: ./mysql
+      dockerfile: ./Dockerfile
+    container_name: ${MYSQL_NAME}
+    restart: always
+    environment:
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ${MYSQL_DATA_PATH}:/var/lib/mysql
+      - ${MYSQL_DATA_DATABASE}:/docker-entrypoint-initdb.d/database
+    
+    ports:
+      - ${MYSQL_PORTS}:3306
+  
+  #phpmyadmin
+  phpmyadmin:
+    build: ${MYADMIN_CONTEXT}
+    restart: unless-stopped
+    container_name: ${MYADMIN_NAME}
+    environment:
+      - UPLOAD_LIMIT=${UPLOAD_LIMIT}
+      - PMA_ARBITRARY=${PMA_ARBITRARY}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    ports:
+      - ${MYADMIN_PORTS}:80
+    depends_on:
+      - mysql
+
+  #workspace
+  workspace:
+    build: 
+      context: ./workspace
+    container_name: ${WORKSPACE_NAME}
+    restart: always
+    # depends_on:
+      # - mongodb
+      # - mysql
+    volumes:
+      - ${APP_DATA_PATH}:/var/www/
+      - ./workspace/supervisord.d/:/etc/supervisor/supervisord.d/
+    ports:
+      - ${WORKSPACE_PORTS}:3000
+
+  # portainer
+  portainer:
+    build:
+      context: ./portainer
+    container_name: ${PORTAINER_NAME}
+    volumes:
+      - ./portainer/portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    ports:
+      - ${PORT_PORTAINER}:9000
+
+  #redis
+  redis:
+    build: ./redis
+    container_name: ${REDIS_NAME}
+    command: >
+      --requirepass ${REDIS_PASSWORD}
+    restart: always
+    ports:
+      - ${REDIS_PORT}:6379
+  
+  #redisinsight
+
+  redisinsight:
+    image: ${REDISINSIGHT}
+    container_name: ${REDISINSIGHT_NAME}
+    ports:
+      - ${REDISINSIGHT_PORT}:8001
+  
+  # mongodb
+  mongodb:
+    build: ./mongodb
+    container_name: ${MONGO_NAME}
+    restart: always
+    volumes:
+      - ${MONGO_DATA_PATH}:/data/db
+    ports:
+      - ${MONGO_PORTS}:27017
